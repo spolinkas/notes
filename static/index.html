@@ -6,7 +6,7 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 700px;
+            max-width: 800px;
             margin: 40px auto;
             background: #f4f6f8;
             color: #222;
@@ -16,7 +16,7 @@
             text-align: center;
         }
 
-        .form {
+        .block {
             background: white;
             padding: 20px;
             border-radius: 10px;
@@ -29,6 +29,10 @@
             margin-top: 10px;
             padding: 10px;
             font-size: 16px;
+        }
+
+        textarea {
+            min-height: 90px;
         }
 
         button {
@@ -48,6 +52,7 @@
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 15px;
+            border-left: 5px solid #2563eb;
         }
 
         .note h3 {
@@ -56,11 +61,44 @@
 
         .delete-btn {
             background: #dc2626;
-            margin-top: 10px;
         }
 
         .delete-btn:hover {
             background: #b91c1c;
+        }
+
+        .edit-btn {
+            background: #16a34a;
+        }
+
+        .edit-btn:hover {
+            background: #15803d;
+        }
+
+        .search-btn {
+            background: #7c3aed;
+        }
+
+        .search-btn:hover {
+            background: #6d28d9;
+        }
+
+        .clear-btn {
+            background: #64748b;
+        }
+
+        .clear-btn:hover {
+            background: #475569;
+        }
+
+        .small-text {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .message {
+            margin-top: 10px;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -68,25 +106,50 @@
 
 <h1>Notes</h1>
 
-<div class="form">
-    <h2>Создать заметку</h2>
+<div class="block">
+    <h2 id="form-title">Создать заметку</h2>
 
     <input id="title" type="text" placeholder="Название заметки">
     <textarea id="content" placeholder="Текст заметки"></textarea>
 
-    <button onclick="createNote()">Создать</button>
+    <button id="save-btn" onclick="createNote()">Создать</button>
+    <button class="clear-btn" onclick="cancelEdit()">Очистить / отменить редактирование</button>
+
+    <p id="form-message" class="message"></p>
+</div>
+
+<div class="block">
+    <h2>Поиск заметки по ID</h2>
+
+    <input id="search-id" type="number" placeholder="Введите ID заметки">
+    <button class="search-btn" onclick="searchNoteById()">Найти</button>
+    <button class="clear-btn" onclick="loadNotes()">Показать все заметки</button>
+
+    <p id="search-message" class="message"></p>
 </div>
 
 <h2>Список заметок</h2>
 <div id="notes"></div>
 
 <script>
+    let editingNoteId = null;
+
     async function loadNotes() {
         const response = await fetch("/notes");
         const notes = await response.json();
 
+        document.getElementById("search-message").textContent = "";
+        renderNotes(notes);
+    }
+
+    function renderNotes(notes) {
         const notesDiv = document.getElementById("notes");
         notesDiv.innerHTML = "";
+
+        if (!notes || notes.length === 0) {
+            notesDiv.innerHTML = "<p>Заметок пока нет.</p>";
+            return;
+        }
 
         notes.forEach(note => {
             const div = document.createElement("div");
@@ -95,7 +158,10 @@
             div.innerHTML = `
                 <h3>${note.title}</h3>
                 <p>${note.content}</p>
-                <small>ID: ${note.id}</small>
+                <p class="small-text">ID: ${note.id}</p>
+                <button class="edit-btn" onclick="startEdit(${note.id}, '${escapeText(note.title)}', '${escapeText(note.content)}')">
+                    Редактировать
+                </button>
                 <button class="delete-btn" onclick="deleteNote(${note.id})">
                     Удалить
                 </button>
@@ -105,12 +171,20 @@
         });
     }
 
+    function escapeText(text) {
+        return String(text)
+            .replaceAll("\\", "\\\\")
+            .replaceAll("'", "\\'")
+            .replaceAll("\n", "\\n")
+            .replaceAll("\r", "");
+    }
+
     async function createNote() {
         const title = document.getElementById("title").value;
         const content = document.getElementById("content").value;
 
         if (!title || !content) {
-            alert("Заполни название и текст заметки");
+            document.getElementById("form-message").textContent = "Заполни название и текст заметки";
             return;
         }
 
@@ -125,9 +199,55 @@
             })
         });
 
-        document.getElementById("title").value = "";
-        document.getElementById("content").value = "";
+        clearForm();
+        loadNotes();
+    }
 
+    function startEdit(id, title, content) {
+        editingNoteId = id;
+
+        document.getElementById("title").value = title;
+        document.getElementById("content").value = content;
+
+        document.getElementById("form-title").textContent = "Редактировать заметку";
+        document.getElementById("save-btn").textContent = "Сохранить изменения";
+        document.getElementById("save-btn").setAttribute("onclick", "updateNote()");
+
+        document.getElementById("form-message").textContent = `Редактируется заметка с ID ${id}`;
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    async function updateNote() {
+        const title = document.getElementById("title").value;
+        const content = document.getElementById("content").value;
+
+        if (!title || !content) {
+            document.getElementById("form-message").textContent = "Заполни название и текст заметки";
+            return;
+        }
+
+        if (editingNoteId === null) {
+            document.getElementById("form-message").textContent = "Не выбрана заметка для редактирования";
+            return;
+        }
+
+        const response = await fetch(`/notes/${editingNoteId}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                title: title,
+                content: content
+            })
+        });
+
+        if (!response.ok) {
+            document.getElementById("form-message").textContent = "Ошибка: заметка не найдена";
+            return;
+        }
+
+        clearForm();
         loadNotes();
     }
 
@@ -136,7 +256,50 @@
             method: "DELETE"
         });
 
+        if (editingNoteId === id) {
+            clearForm();
+        }
+
         loadNotes();
+    }
+
+    async function searchNoteById() {
+        const id = document.getElementById("search-id").value;
+
+        if (!id) {
+            document.getElementById("search-message").textContent = "Введите ID заметки";
+            return;
+        }
+
+        const response = await fetch(`/notes/${id}`);
+
+        if (!response.ok) {
+            document.getElementById("notes").innerHTML = "";
+            document.getElementById("search-message").textContent = "Заметка не найдена";
+            return;
+        }
+
+        const note = await response.json();
+
+        document.getElementById("search-message").textContent = `Найдена заметка с ID ${id}`;
+        renderNotes([note]);
+    }
+
+    function cancelEdit() {
+        clearForm();
+    }
+
+    function clearForm() {
+        editingNoteId = null;
+
+        document.getElementById("title").value = "";
+        document.getElementById("content").value = "";
+
+        document.getElementById("form-title").textContent = "Создать заметку";
+        document.getElementById("save-btn").textContent = "Создать";
+        document.getElementById("save-btn").setAttribute("onclick", "createNote()");
+
+        document.getElementById("form-message").textContent = "";
     }
 
     loadNotes();
